@@ -21,7 +21,6 @@ batch_size = 10
 learning_rate = 3e-4
 eps = 0.2  # clipping
 
-# 1. Move tensor device configuration to GPU if available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # function to calculate the (discounted) reward-to-go from a sequence of rewards
@@ -36,8 +35,6 @@ def calc_reward_togo(rewards, gamma=0.99):
 
     reward_togo = torch.tensor(reward_togo, dtype=torch.float)
     return reward_togo
-
-# compute advantage estimates (as done in PPO paper)
 
 
 def calc_advantages(rewards, values, gamma=0.99, lambda_=1):
@@ -137,14 +134,14 @@ class PPO:
 
         for iteration in range(num_iterations):  # k
 
-            # collect a number of trajectories and save the transitions in replay memory
+            # Collect a number of trajectories and save the transitions in replay memory
             for _ in range(num_trajectories):
                 self.generate_trajectory()
 
-            # sample from replay memory
+            # Sample from replay memory
             states, actions, rewards, rewards_togo, advantages, values, log_probs, batches = self.memory.sample()
 
-            # 4. Move tensors to device in batch
+            # Move tensors to device in batch
             states = states.to(device)
             actions = actions.to(device)
             rewards_togo = rewards_togo.to(device)
@@ -158,7 +155,7 @@ class PPO:
             reward_list = []
             for _ in range(epochs):
 
-                # calculate the new log prob
+                # Calculate the new log probs
                 mean = self.policy_net(states)
                 normal = MultivariateNormal(mean, self.std)
                 new_log_probs = normal.log_prob(actions.unsqueeze(-1))
@@ -182,12 +179,11 @@ class PPO:
                                   clipped_r * rewards_togo)).mean()
                     critic_loss = nn.MSELoss()(new_values.float(), rewards_togo.float())
 
-                # Calcualte total loss
+                # Calculate total loss
                 total_loss = actor_loss + \
                     (self.vf_coef * critic_loss) - \
                     (self.entropy_coef * normal.entropy().mean())
 
-                # update policy and critic network
                 self.optimizer.zero_grad()
                 total_loss.backward(retain_graph=True)
                 self.optimizer.step()
@@ -197,7 +193,6 @@ class PPO:
                 total_loss_list.append(total_loss.item())
                 reward_list.append(sum(rewards))
 
-            # clear replay memory
             self.memory.clear()
 
             avg_actor_loss = sum(actor_loss_list) / len(actor_loss_list)
@@ -264,8 +259,6 @@ class PPO:
         return train_reward
 
     def show_value_grid(self):
-
-        # sweep theta and theta_dot and find all states
         theta = torch.linspace(-np.pi, np.pi, 100)
         theta_dot = torch.linspace(-8, 8, 100)
         values = torch.zeros((len(theta), len(theta_dot)))
@@ -275,7 +268,6 @@ class PPO:
                 state = (torch.cos(t), torch.sin(t), td)
                 values[i, j] = self.critic_net(torch.as_tensor(state))
 
-        # display the resulting values using imshow
         fig2 = plt.figure(figsize=(5, 5))
         plt.imshow(values.detach().numpy(), extent=[
                    theta[0], theta[-1], theta_dot[0], theta_dot[-1]], aspect=0.4)
@@ -318,7 +310,7 @@ class PPOPlusPlus(PPO):
         checkpoint = torch.load('./results/expert_policy.pt')
         self.guide_policy.load_state_dict(checkpoint['policy_net_state_dict'])
 
-        # Make beta decay over time
+        # Make beta decay over time (optional)
         self.initial_beta = 0.5
         self.beta_decay = 1
         self.min_beta = 0.1
