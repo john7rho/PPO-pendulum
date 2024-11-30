@@ -21,7 +21,6 @@ batch_size = 10
 learning_rate = 3e-4
 eps = 0.2  # clipping
 
-# 1. Move tensor device configuration to GPU if available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # function to calculate the (discounted) reward-to-go from a sequence of rewards
@@ -36,8 +35,6 @@ def calc_reward_togo(rewards, gamma=0.99):
 
     reward_togo = torch.tensor(reward_togo, dtype=torch.float)
     return reward_togo
-
-# compute advantage estimates (as done in PPO paper)
 
 
 def calc_advantages(rewards, values, gamma=0.99, lambda_=1):
@@ -55,7 +52,10 @@ class PPO:
     def __init__(self, clipping_on, advantage_on, gamma=0.99, seed=None):
         if seed is not None:
             torch.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
             np.random.seed(seed)
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
 
         # Move networks to GPU if available
         self.policy_net = Net(3, 1).to(device)
@@ -137,14 +137,14 @@ class PPO:
 
         for iteration in range(num_iterations):  # k
 
-            # collect a number of trajectories and save the transitions in replay memory
+            # Collect a number of trajectories and save the transitions in replay memory
             for _ in range(num_trajectories):
                 self.generate_trajectory()
 
-            # sample from replay memory
+            # Sample from replay memory
             states, actions, rewards, rewards_togo, advantages, values, log_probs, batches = self.memory.sample()
 
-            # 4. Move tensors to device in batch
+            # Move tensors to device in batch
             states = states.to(device)
             actions = actions.to(device)
             rewards_togo = rewards_togo.to(device)
@@ -158,7 +158,7 @@ class PPO:
             reward_list = []
             for _ in range(epochs):
 
-                # calculate the new log prob
+                # Calculate the new log probs
                 mean = self.policy_net(states)
                 normal = MultivariateNormal(mean, self.std)
                 new_log_probs = normal.log_prob(actions.unsqueeze(-1))
@@ -182,12 +182,11 @@ class PPO:
                                   clipped_r * rewards_togo)).mean()
                     critic_loss = nn.MSELoss()(new_values.float(), rewards_togo.float())
 
-                # Calcualte total loss
+                # Calculate total loss
                 total_loss = actor_loss + \
                     (self.vf_coef * critic_loss) - \
                     (self.entropy_coef * normal.entropy().mean())
 
-                # update policy and critic network
                 self.optimizer.zero_grad()
                 total_loss.backward(retain_graph=True)
                 self.optimizer.step()
@@ -197,7 +196,6 @@ class PPO:
                 total_loss_list.append(total_loss.item())
                 reward_list.append(sum(rewards))
 
-            # clear replay memory
             self.memory.clear()
 
             avg_actor_loss = sum(actor_loss_list) / len(actor_loss_list)
@@ -231,31 +229,31 @@ class PPO:
         self.save_checkpoint(
             f'./results/ppo_final_model_{self.clipping_on}_{self.advantage_on}.pt')
 
-        fig, axes = plt.subplots(1, 4, figsize=(20, 5))
-        axes[0].plot(range(len(train_actor_loss)),
-                     train_actor_loss, 'r', label='Actor Loss')
-        axes[0].set_title('Actor Loss', fontsize=18)
+        # fig, axes = plt.subplots(1, 4, figsize=(20, 5))
+        # axes[0].plot(range(len(train_actor_loss)),
+        #              train_actor_loss, 'r', label='Actor Loss')
+        # axes[0].set_title('Actor Loss', fontsize=18)
 
-        axes[1].plot(range(len(train_critic_loss)),
-                     train_critic_loss, 'b', label='Critic Loss')
-        axes[1].set_title('Critic Loss', fontsize=18)
+        # axes[1].plot(range(len(train_critic_loss)),
+        #              train_critic_loss, 'b', label='Critic Loss')
+        # axes[1].set_title('Critic Loss', fontsize=18)
 
-        axes[2].plot(range(len(train_total_loss)),
-                     train_total_loss, 'm', label='Total Loss')
-        axes[2].set_title('Total Loss', fontsize=18)
+        # axes[2].plot(range(len(train_total_loss)),
+        #              train_total_loss, 'm', label='Total Loss')
+        # axes[2].set_title('Total Loss', fontsize=18)
 
-        axes[3].plot(range(len(train_reward)), train_reward,
-                     'orange', label='Accumulated Reward')
-        axes[3].set_title('Accumulated Reward', fontsize=18)
+        # axes[3].plot(range(len(train_reward)), train_reward,
+        #              'orange', label='Accumulated Reward')
+        # axes[3].set_title('Accumulated Reward', fontsize=18)
 
-        fig.suptitle(
-            f'Results for clipping_on={self.clipping_on} and advantage_on={self.advantage_on}\n', fontsize=20)
-        fig.tight_layout()
-        plt.savefig(
-            f'./results/ppo_figure1_{self.clipping_on}_{self.advantage_on}.png')
-        fig.show()
+        # fig.suptitle(
+        #     f'Results for clipping_on={self.clipping_on} and advantage_on={self.advantage_on}\n', fontsize=20)
+        # fig.tight_layout()
+        # plt.savefig(
+        #     f'./results/ppo_figure1_{self.clipping_on}_{self.advantage_on}.png')
+        # fig.show()
 
-        self.show_value_grid()
+        # self.show_value_grid()
 
         # Modify return to include rewards for plotting
         if iteration == num_iterations - 1:
@@ -264,8 +262,6 @@ class PPO:
         return train_reward
 
     def show_value_grid(self):
-
-        # sweep theta and theta_dot and find all states
         theta = torch.linspace(-np.pi, np.pi, 100)
         theta_dot = torch.linspace(-8, 8, 100)
         values = torch.zeros((len(theta), len(theta_dot)))
@@ -275,7 +271,6 @@ class PPO:
                 state = (torch.cos(t), torch.sin(t), td)
                 values[i, j] = self.critic_net(torch.as_tensor(state))
 
-        # display the resulting values using imshow
         fig2 = plt.figure(figsize=(5, 5))
         plt.imshow(values.detach().numpy(), extent=[
                    theta[0], theta[-1], theta_dot[0], theta_dot[-1]], aspect=0.4)
@@ -309,7 +304,10 @@ class PPOPlusPlus(PPO):
     def __init__(self, clipping_on, advantage_on, gamma=0.99, seed=None):
         if seed is not None:
             torch.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
             np.random.seed(seed)
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
 
         super().__init__(clipping_on, advantage_on, gamma)
 
@@ -318,7 +316,7 @@ class PPOPlusPlus(PPO):
         checkpoint = torch.load('./results/expert_policy.pt')
         self.guide_policy.load_state_dict(checkpoint['policy_net_state_dict'])
 
-        # Make beta decay over time
+        # Make beta decay over time (optional)
         self.initial_beta = 0.5
         self.beta_decay = 1
         self.min_beta = 0.1
@@ -381,7 +379,7 @@ class PPOPlusPlus(PPO):
 
 
 # Add new constants
-NUM_SEEDS = 5  # Number of different random seeds to try
+NUM_SEEDS = 10  # Number of different random seeds to try
 SAVE_RESULTS = True  # Whether to save the results
 
 
@@ -390,6 +388,12 @@ def run_experiments():
 
     for seed in range(NUM_SEEDS):
         print(f"\nRunning experiments with seed {seed}")
+
+        # Set all random seeds
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        np.random.seed(seed)
+        env.reset(seed=seed)
 
         # Train PPO
         ppo_agent = PPO(clipping_on=True, advantage_on=True, seed=seed)
