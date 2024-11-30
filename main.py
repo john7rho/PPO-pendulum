@@ -414,7 +414,7 @@ class PPOPlusPlus(PPO):
         train_reward = []
 
         for iteration in range(num_iterations):
-            trajectory_rewards = []  # Track full trajectory rewards
+            trajectory_rewards = []
             actor_loss_list = []
             critic_loss_list = []
             total_loss_list = []
@@ -423,8 +423,10 @@ class PPOPlusPlus(PPO):
             # Collect trajectories
             for _ in range(num_trajectories):
                 self.generate_trajectory()
-                trajectory_rewards.append(
+                # Just use sum, no mean
+                trajectory_reward = torch.tensor(
                     sum(self.memory.rewards[-num_timesteps:]))
+                trajectory_rewards.append(trajectory_reward)
 
             # Sample from memory
             states, actions, rewards, returns, advantages, values, old_log_probs, batches = self.memory.sample()
@@ -476,7 +478,8 @@ class PPOPlusPlus(PPO):
                 actor_loss_list.append(actor_loss.item())
                 critic_loss_list.append(critic_loss.item())
                 total_loss_list.append(total_loss.item())
-                reward_list.append(np.mean(trajectory_rewards))
+                # Changed from mean to sum
+                reward_list.append(torch.sum(torch.stack(trajectory_rewards)))
 
             # Update coefficients
             self.beta = max(self.min_beta, self.beta * self.beta_decay)
@@ -520,10 +523,10 @@ def run_experiment_for_seed(seed):
 
     print(f"\nRunning experiments with seed {seed} in process {os.getpid()}")
 
-    # Train PPO
-    ppo_agent = PPO(clipping_on=True, advantage_on=True, seed=seed)
-    ppo_rewards = ppo_agent.train()
-    seed_results['PPO'] = ppo_rewards
+    # # Train PPO
+    # ppo_agent = PPO(clipping_on=True, advantage_on=True, seed=seed)
+    # ppo_rewards = ppo_agent.train()
+    # seed_results['PPO'] = ppo_rewards
 
     # Train PPO++
     ppo_plus_agent = PPOPlusPlus(
